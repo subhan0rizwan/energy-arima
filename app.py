@@ -201,10 +201,11 @@ with tab1:
     st.markdown('<h3 class="animate__fadeIn">Historical Prices</h3>', unsafe_allow_html=True)
     fig_price = px.line(df, x=df.index, y=selected_energy, title=f'{selected_energy} Historical Prices')
     
-    fig_price.update_traces(line_color='#ffffff')
+    fig_price.update_traces(line_color='#00e6e6') # Set line color
     fig_price.update_layout(
         plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#ffffff',
-        template='plotly_dark', hovermode='x unified'
+        template='plotly_dark', hovermode='x unified',
+        title_font_color='white'
     )
     
     st.plotly_chart(fig_price, use_container_width=True)
@@ -223,15 +224,11 @@ with tab2:
     
     if models.get('arima'):
         try:
-            # --- THIS IS THE FIX ---
-            # Explicitly select only the engineered features to match the training script
             exog_features = [col for col in full_processed_df.columns if col != selected_energy and ('rolling' in col or 'std' in col or 'Sentiment' in col)]
-            # --- END FIX ---
-
             last_exog = full_processed_df[exog_features].iloc[-1:].values
             future_exog = np.repeat(last_exog, forecast_horizon, axis=0)
             arima_preds = models['arima'].forecast(steps=forecast_horizon, exog=future_exog)
-        except Exception as e: 
+        except Exception as e:
             st.warning(f"ARIMA prediction failed: {e}")
 
     if models.get('prophet'):
@@ -274,7 +271,10 @@ with tab2:
     if prophet_preds is not None: fig_forecast.add_trace(go.Scatter(x=forecast_dates, y=prophet_preds, name='Prophet', line={'color': '#ffcc00'}))
     fig_forecast.update_layout(
         title=f'{selected_energy} Forecasts ({forecast_horizon} Months)',
-        plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6', template='plotly_dark'
+        plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6', template='plotly_dark',
+        title_font_color='white',
+        legend_font_color='white',
+        legend_title_font_color='white'
     )
     st.plotly_chart(fig_forecast, use_container_width=True)
     
@@ -287,5 +287,3 @@ with tab3:
         st.image('correlations_heatmap.png', use_container_width=True)
     else:
         st.warning("Correlation heatmap not found. Please run the main script.")
-
-
