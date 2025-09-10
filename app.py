@@ -201,9 +201,9 @@ with tab1:
     st.markdown('<h3 class="animate__fadeIn">Historical Prices</h3>', unsafe_allow_html=True)
     fig_price = px.line(df, x=df.index, y=selected_energy, title=f'{selected_energy} Historical Prices')
     
-    fig_price.update_traces(line_color='#00e6e6')
+    fig_price.update_traces(line_color='#ffffff')
     fig_price.update_layout(
-        plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6',
+        plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#ffffff',
         template='plotly_dark', hovermode='x unified'
     )
     
@@ -287,4 +287,5 @@ with tab3:
         st.image('correlations_heatmap.png', use_container_width=True)
     else:
         st.warning("Correlation heatmap not found. Please run the main script.")
+
 
