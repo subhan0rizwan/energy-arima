@@ -1,3 +1,5 @@
+# requirements.txt
+
 dash
 dash-bootstrap-components
 pandas
@@ -11,3 +13,4 @@ prophet
 scikit-learn
 transformers
 gunicorn
+streamlit
