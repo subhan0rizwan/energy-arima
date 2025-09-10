@@ -1,4 +1,4 @@
-# streamlit_app.py
+# app.py (or streamlit_app.py)
 
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,6 @@ import torch.nn as nn
 import importlib.util
 
 # --- Streamlit Page Configuration ---
-# Setting up the page with a title, icon, and wide layout for a modern feel.
 st.set_page_config(
     page_title="Energy Price Forecasting Dashboard",
     page_icon="⚡",
@@ -23,7 +22,6 @@ st.set_page_config(
 )
 
 # --- Custom CSS for a Vibrant, Modern Theme ---
-# I've designed a custom CSS style for the dashboard to give it a unique, energetic look.
 st.markdown("""
     <style>
     /* Main body and background */
@@ -88,7 +86,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Dependency Check ---
-# I've added a check to ensure all required libraries are installed before the app runs.
 required_libraries = ['pandas', 'numpy', 'yfinance', 'plotly', 'torch', 'statsmodels', 'arch', 'prophet', 'sklearn', 'transformers']
 missing_libraries = [lib for lib in required_libraries if not importlib.util.find_spec(lib)]
 if missing_libraries:
@@ -126,7 +123,6 @@ class LSTMModel(nn.Module):
         return self.fc(out[:, -1, :])
 
 # --- Data and Model Loading ---
-# I'm using Streamlit's caching to avoid reloading data and models on every interaction.
 @st.cache_data
 def load_data():
     try:
@@ -157,7 +153,6 @@ def load_models(input_size):
     return models
 
 # --- Main App Logic ---
-# Initial check: if data/models don't exist, run main.py to generate them.
 required_files = ['energy_prices.parquet', 'arima_model.pkl', 'lstm_model.pth', 'prophet_model.pkl', 'model_results.csv']
 if not all(os.path.exists(f) for f in required_files):
     with st.spinner("First-time setup: Generating data and training models. This may take a few minutes..."):
@@ -174,7 +169,6 @@ df, results = load_data()
 if df is None:
     st.stop()
 
-# Prepare a processed dataframe to determine the input size for the LSTM model.
 processed_df_for_size = preprocess_for_prediction(df.copy())
 models = load_models(input_size=len(processed_df_for_size.columns))
 energy_types = [col for col in df.columns if col in ['Petrol', 'Uranium', 'Natural_Gas', 'Crude_Oil']]
@@ -204,69 +198,62 @@ tab1, tab2, tab3 = st.tabs(["📊 Data Overview", "🔮 Forecasts", "🔍 Advanc
 with tab1:
     st.markdown('<h3 class="animate__fadeIn">Historical Prices</h3>', unsafe_allow_html=True)
     fig_price = px.line(df, x=df.index, y=selected_energy, title=f'{selected_energy} Historical Prices')
+    
+    # --- THIS IS THE FIX ---
+    fig_price.update_traces(line_color='#00e6e6') # Correctly set the line color on the trace
     fig_price.update_layout(
         plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6',
-        template='plotly_dark', hovermode='x unified', line_color='#00e6e6'
+        template='plotly_dark', hovermode='x unified'
     )
+    # --- END FIX ---
+
     st.plotly_chart(fig_price, use_container_width=True)
     st.dataframe(df.reset_index().rename(columns={'index':'Date'}), use_container_width=True)
 
 with tab2:
     st.markdown('<h3 class="animate__fadeIn">Model Forecasts</h3>', unsafe_allow_html=True)
     
-    # This is the core logic for generating future predictions.
-    # It starts forecasting from the last date in the historical data.
     last_date = df.index[-1]
     forecast_dates = pd.date_range(start=last_date + pd.DateOffset(months=1), periods=forecast_horizon, freq='M')
     
-    # Prepare full dataframe for feature generation
     full_processed_df = preprocess_for_prediction(df.copy())
 
     # --- Generate Forecasts ---
     arima_preds, lstm_preds, prophet_preds = None, None, None
     
-    # ARIMA Prediction
     if models.get('arima'):
         try:
             exog_features = [col for col in full_processed_df.columns if col != selected_energy]
-            # We need to create future exogenous variables. A simple way is to use the last known values.
             last_exog = full_processed_df[exog_features].iloc[-1:].values
             future_exog = np.repeat(last_exog, forecast_horizon, axis=0)
             arima_preds = models['arima'].forecast(steps=forecast_horizon, exog=future_exog)
         except Exception as e: st.warning(f"ARIMA prediction failed: {e}")
 
-    # Prophet Prediction
     if models.get('prophet'):
         try:
             future_df = pd.DataFrame({'ds': forecast_dates})
-            # Add future regressors by forward-filling the last known values.
             for regressor in models['prophet'].extra_regressors:
                 future_df[regressor] = full_processed_df[regressor].iloc[-1]
             prophet_preds = models['prophet'].predict(future_df)['yhat']
         except Exception as e: st.warning(f"Prophet prediction failed: {e}")
     
-    # LSTM Prediction
     if models.get('lstm'):
         try:
             seq_length = 12
             scaler = MinMaxScaler(feature_range=(-1, 1))
             scaled_df = pd.DataFrame(scaler.fit_transform(full_processed_df), columns=full_processed_df.columns)
             
-            # Autoregressive prediction loop
             last_sequence = torch.tensor(scaled_df.values[-seq_length:], dtype=torch.float32).unsqueeze(0)
             preds_scaled_list = []
             for _ in range(forecast_horizon):
                 with torch.no_grad():
                     pred = models['lstm'](last_sequence)
                     preds_scaled_list.append(pred.item())
-                    # Update sequence for next prediction
                     new_row = last_sequence.squeeze(0)[-1].numpy()
-                    # Find target index to update with new prediction
                     target_idx = scaled_df.columns.get_loc(selected_energy)
                     new_row[target_idx] = pred.item()
                     last_sequence = torch.cat((last_sequence.squeeze(0)[1:], torch.tensor(new_row).unsqueeze(0)), 0).unsqueeze(0)
 
-            # Inverse transform the predictions
             target_idx = full_processed_df.columns.get_loc(selected_energy)
             dummy_preds = np.zeros((forecast_horizon, len(full_processed_df.columns)))
             dummy_preds[:, target_idx] = preds_scaled_list
