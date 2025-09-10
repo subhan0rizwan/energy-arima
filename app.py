@@ -57,13 +57,13 @@ st.markdown("""
 
     /* Titles and Headers */
     h1 {
-        color: #f0f2f6;
+        color: #ffffff;
         text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
         border-bottom: 2px solid #00e6e6; /* Title underline matches button color */
         padding-bottom: 10px;
     }
     h3 {
-        color: #f0f2f6;
+        color: #ffffff;
         margin-top: 30px;
     }
 
@@ -287,3 +287,4 @@ with tab3:
         st.image('correlations_heatmap.png', use_container_width=True)
     else:
         st.warning("Correlation heatmap not found. Please run the main script.")
+
