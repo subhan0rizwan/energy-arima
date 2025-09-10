@@ -16,7 +16,6 @@ import importlib.util
 # --- Streamlit Page Configuration ---
 st.set_page_config(
     page_title="Energy Price Forecasting Dashboard",
-    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -287,4 +286,5 @@ with tab3:
         st.image('correlations_heatmap.png', use_container_width=True)
     else:
         st.warning("Correlation heatmap not found. Please run the main script.")
+
 
