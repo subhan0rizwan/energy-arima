@@ -193,7 +193,7 @@ if st.sidebar.button("Refresh Data & Retrain Models"):
     st.experimental_rerun()
 
 # --- Dashboard Layout ---
-st.markdown('<h1 class="animate__fadeIn">⚡ Energy Price Forecasting Dashboard</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="animate__fadeIn">Energy Price Forecasting Dashboard</h1>', unsafe_allow_html=True)
 tab1, tab2, tab3 = st.tabs(["Data Overview", "🔮 Forecasts", "🔍 Advanced Analyses"])
 
 with tab1:
@@ -286,5 +286,6 @@ with tab3:
         st.image('correlations_heatmap.png', use_container_width=True)
     else:
         st.warning("Correlation heatmap not found. Please run the main script.")
+
 
 
