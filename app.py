@@ -92,7 +92,6 @@ if missing_libraries:
     st.stop()
 
 # --- Utility Functions ---
-
 def preprocess_for_prediction(df):
     """
     A lightweight version of the main preprocessing script, designed to prepare
@@ -131,8 +130,8 @@ def load_data():
         results = pd.read_csv('model_results.csv')
         return df, results
     except FileNotFoundError:
-        st.warning("Data files not found. Running the data generation script...")
-        return None, None
+        st.error("Data and model files not found. Please run 'python main.py' to generate them.")
+        st.stop()
 
 @st.cache_resource
 def load_models(input_size):
@@ -149,26 +148,17 @@ def load_models(input_size):
         model.eval()
         models['lstm'] = model
     except (FileNotFoundError, RuntimeError) as e:
-        st.warning(f"LSTM model could not be loaded: {e}")
+        st.warning(f"LSTM model could not be loaded: {e}. Please ensure it was trained successfully.")
         models['lstm'] = None
     return models
 
 # --- Main App Logic ---
 required_files = ['energy_prices.parquet', 'arima_model.pkl', 'lstm_model.pth', 'prophet_model.pkl', 'model_results.csv']
 if not all(os.path.exists(f) for f in required_files):
-    with st.spinner("First-time setup: Generating data and training models. This may take a few minutes..."):
-        try:
-            subprocess.run(['python', 'main.py'], check=True, capture_output=True, text=True)
-            st.success("Data and models generated successfully!")
-            st.experimental_rerun()
-        except subprocess.CalledProcessError as e:
-            st.error(f"Error generating artifacts. Please run 'python main.py' manually from your terminal.")
-            st.code(e.stderr)
-            st.stop()
+    st.warning("Required data and model files are missing. Please generate them by running `python main.py`.")
+    st.stop()
 
 df, results = load_data()
-if df is None:
-    st.stop()
 
 processed_df_for_size = preprocess_for_prediction(df.copy())
 models = load_models(input_size=len(processed_df_for_size.columns))
@@ -184,17 +174,9 @@ forecast_horizon = st.sidebar.selectbox(
     index=1
 )
 
-if st.sidebar.button("Refresh Data & Retrain Models"):
-    with st.spinner("Refreshing data and retraining all models..."):
-        subprocess.run(['python', 'main.py'], check=True)
-        st.cache_data.clear()
-        st.cache_resource.clear()
-    st.success("Data and models have been refreshed!")
-    st.experimental_rerun()
-
 # --- Dashboard Layout ---
 st.markdown('<h1 class="animate__fadeIn">Subhan Rizwan - Energy Price Forecasting Dashboard</h1>', unsafe_allow_html=True)
-tab1, tab2, tab3 = st.tabs(["Data Overview", "🔮 Forecasts", "🔍 Advanced Analyses"])
+tab1, tab2, tab3 = st.tabs(["Data Overview", "Forecasts", "Advanced Analyses"])
 
 with tab1:
     st.markdown('<h3 class="animate__fadeIn">Historical Prices</h3>', unsafe_allow_html=True)
@@ -286,7 +268,3 @@ with tab3:
         st.image('correlations_heatmap.png', use_container_width=True)
     else:
         st.warning("Correlation heatmap not found. Please run the main script.")
-
-
-
-
