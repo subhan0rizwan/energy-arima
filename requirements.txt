@@ -1,14 +1,17 @@
 # requirements.txt
 
-streamlit
+dash
+dash-bootstrap-components
 pandas
 numpy
-plotly
 yfinance
+plotly
 torch
 statsmodels
 arch
 prophet
-sklearn
+scikit-learn
 transformers
+gunicorn
+streamlit
 
