@@ -1,3 +1,5 @@
+# streamlit_app.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,13 +9,12 @@ import subprocess
 import os
 import pickle
 import torch
-from datetime import datetime, timedelta
-import importlib.util
-import sys
 from sklearn.preprocessing import MinMaxScaler
 import torch.nn as nn
+import importlib.util
 
-# Streamlit page configuration
+# --- Streamlit Page Configuration ---
+# Setting up the page with a title, icon, and wide layout for a modern feel.
 st.set_page_config(
     page_title="Energy Price Forecasting Dashboard",
     page_icon="⚡",
@@ -21,12 +22,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for a vibrant theme
+# --- Custom CSS for a Vibrant, Modern Theme ---
+# I've designed a custom CSS style for the dashboard to give it a unique, energetic look.
 st.markdown("""
     <style>
     /* Main body and background */
     .stApp {
-        background-color: #1c1c1c;
+        background-color: #1c1c1c; /* Dark charcoal background */
         color: #f0f2f6;
     }
 
@@ -42,55 +44,39 @@ st.markdown("""
         transition: all 0.2s ease-in-out;
     }
     .stButton>button:hover {
-        background-color: #00ff66; /* Energetic green */
+        background-color: #00ff66; /* Energetic green on hover */
         color: #1c1c1c;
         transform: translateY(-2px);
         box-shadow: 0 6px 10px rgba(0, 255, 102, 0.4);
     }
 
-    /* Selectbox and Slider */
+    /* Selectbox and Other Widgets */
     .stSelectbox, .stSlider {
         background-color: #2c2c2c;
-        color: #f0f2f6;
         border-radius: 8px;
         border: 1px solid #3c3c3c;
     }
-    .stSelectbox>div>div>select {
-        background-color: #2c2c2c;
-        color: #f0f2f6;
-    }
 
     /* Titles and Headers */
-    h1, h2, h3 {
+    h1 {
         color: #f0f2f6;
         text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
-    }
-    h1 {
-        border-bottom: 2px solid #00e6e6;
+        border-bottom: 2px solid #00e6e6; /* Title underline matches button color */
         padding-bottom: 10px;
     }
     h3 {
+        color: #f0f2f6;
         margin-top: 30px;
     }
 
-    /* Charts and dataframes */
+    /* Charts and DataFrames */
     .stPlotlyChart {
         box-shadow: 8px 8px 15px rgba(0, 0, 0, 0.6);
         border-radius: 12px;
-        overflow: hidden;
-    }
-    .stDataFrame {
-        border-radius: 10px;
-        box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.4);
-    }
-    .stMarkdown a {
-        color: #00e6e6;
-    }
-    .stMarkdown a:hover {
-        color: #00ff66;
+        overflow: hidden; /* Ensures the shadow respects the border radius */
     }
     
-    /* Animations */
+    /* Animation for a smooth entrance */
     .animate__fadeIn {
         animation: fadeIn 1.5s ease-in;
     }
@@ -101,292 +87,211 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Check for critical dependencies
+# --- Dependency Check ---
+# I've added a check to ensure all required libraries are installed before the app runs.
 required_libraries = ['pandas', 'numpy', 'yfinance', 'plotly', 'torch', 'statsmodels', 'arch', 'prophet', 'sklearn', 'transformers']
 missing_libraries = [lib for lib in required_libraries if not importlib.util.find_spec(lib)]
 if missing_libraries:
-    st.error(f"Missing critical libraries: {', '.join(missing_libraries)}. Please check requirements.txt and Python version.")
+    st.error(f"Missing critical libraries: {', '.join(missing_libraries)}. Please run 'pip install -r requirements.txt'.")
     st.stop()
 
-def preprocess_for_lstm(df):
-    """Replicates the preprocessing steps from main.py for LSTM input."""
-    df = df.replace([np.inf, -np.inf], np.nan).dropna(how='all').ffill().bfill()
+# --- Utility Functions ---
+
+def preprocess_for_prediction(df):
+    """
+    A lightweight version of the main preprocessing script, designed to prepare
+    data for generating new predictions without re-running the full analysis.
+    """
+    df = df.replace([np.inf, -np.inf], np.nan).ffill().bfill()
     for col in df.columns:
-        df[f'{col}_rolling'] = df[col].rolling(12).mean()
-        df[f'{col}_std'] = df[col].rolling(12).std()
-    df = df.fillna(method='bfill')
+        if '_rolling' not in col and '_std' not in col:
+             df[f'{col}_rolling'] = df[col].rolling(12).mean()
+             df[f'{col}_std'] = df[col].rolling(12).std()
+    df = df.ffill().bfill()
     df.columns = df.columns.astype(str)
+    # Add placeholder for sentiment
+    if 'Sentiment' not in df.columns:
+        df['Sentiment'] = 0.0
     return df
 
-@st.cache_data
-def load_data():
-    try:
-        df = pd.read_parquet('energy_prices.parquet')
-        results = pd.read_csv('model_results.csv')
-        return df, results
-    except Exception as e:
-        st.warning(f"Error loading data: {e}. Using synthetic data.")
-        dates = pd.date_range('2015-01-01', '2025-09-08', freq='M')
-        np.random.seed(42)
-        df = pd.DataFrame({
-            'Petrol': np.clip(np.random.normal(loc=100, scale=10, size=len(dates)), 50, 150),
-            'Uranium': np.clip(np.random.normal(loc=50, scale=5, size=len(dates)), 20, 80),
-            'Natural_Gas': np.clip(np.random.normal(loc=5, scale=0.5, size=len(dates)), 2, 8),
-            'Crude_Oil': np.clip(np.random.normal(loc=70, scale=7, size=len(dates)), 30, 110)
-        }, index=dates)
-        results = pd.DataFrame({
-            'arima_mse': [float('inf')],
-            'lstm_mse': [float('inf')],
-            'prophet_mse': [float('inf')]
-        })
-        return df, results
-
-required_files = ['energy_prices.parquet', 'arima_model.pkl', 'lstm_model.pth', 'prophet_model.pkl', 'correlations_heatmap.png', 'model_results.csv']
-if not all(os.path.exists(f) for f in required_files):
-    try:
-        st.info("Generating data and models...")
-        subprocess.run(['python', 'main.py'], check=True)
-        st.cache_data.clear()
-        st.experimental_rerun()
-    except Exception as e:
-        st.error(f"Error generating data/models: {e}. Using synthetic data.")
-
-df, results = load_data()
-energy_types = [col for col in df.columns if col in ['Petrol', 'Uranium', 'Natural_Gas', 'Crude_Oil']]
-
-processed_df = preprocess_for_lstm(df.copy())
-if 'Sentiment' not in processed_df.columns:
-    processed_df['Sentiment'] = 0.0
-
-class LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size=50, num_layers=2):
+# Defining the LSTM model class is necessary to load the saved state_dict.
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size=100, num_layers=3, dropout_rate=0.3):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout_rate)
         self.fc = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
         out, _ = self.lstm(x)
         return self.fc(out[:, -1, :])
 
+# --- Data and Model Loading ---
+# I'm using Streamlit's caching to avoid reloading data and models on every interaction.
+@st.cache_data
+def load_data():
+    try:
+        df = pd.read_parquet('energy_prices.parquet')
+        results = pd.read_csv('model_results.csv')
+        return df, results
+    except FileNotFoundError:
+        st.warning("Data files not found. Running the data generation script...")
+        return None, None
+
 @st.cache_resource
-def load_models(processed_df):
+def load_models(input_size):
     models = {}
     try:
-        with open('arima_model.pkl', 'rb') as f:
-            models['arima'] = pickle.load(f)
-    except:
-        models['arima'] = None
+        with open('arima_model.pkl', 'rb') as f: models['arima'] = pickle.load(f)
+    except FileNotFoundError: models['arima'] = None
     try:
-        input_size = len(processed_df.columns)
-        model = LSTM(input_size=input_size)
+        with open('prophet_model.pkl', 'rb') as f: models['prophet'] = pickle.load(f)
+    except FileNotFoundError: models['prophet'] = None
+    try:
+        model = LSTMModel(input_size=input_size)
         model.load_state_dict(torch.load('lstm_model.pth'))
         model.eval()
         models['lstm'] = model
-    except Exception as e:
-        st.warning(f"LSTM model load failed: {e}")
+    except (FileNotFoundError, RuntimeError) as e:
+        st.warning(f"LSTM model could not be loaded: {e}")
         models['lstm'] = None
-    try:
-        with open('prophet_model.pkl', 'rb') as f:
-            models['prophet'] = pickle.load(f)
-    except:
-        st.warning("Prophet model load failed.")
-        models['prophet'] = None
     return models
 
-models = load_models(processed_df)
+# --- Main App Logic ---
+# Initial check: if data/models don't exist, run main.py to generate them.
+required_files = ['energy_prices.parquet', 'arima_model.pkl', 'lstm_model.pth', 'prophet_model.pkl', 'model_results.csv']
+if not all(os.path.exists(f) for f in required_files):
+    with st.spinner("First-time setup: Generating data and training models. This may take a few minutes..."):
+        try:
+            subprocess.run(['python', 'main.py'], check=True, capture_output=True, text=True)
+            st.success("Data and models generated successfully!")
+            st.experimental_rerun()
+        except subprocess.CalledProcessError as e:
+            st.error(f"Error generating artifacts. Please run 'python main.py' manually from your terminal.")
+            st.code(e.stderr)
+            st.stop()
 
-# Sidebar controls
+df, results = load_data()
+if df is None:
+    st.stop()
+
+# Prepare a processed dataframe to determine the input size for the LSTM model.
+processed_df_for_size = preprocess_for_prediction(df.copy())
+models = load_models(input_size=len(processed_df_for_size.columns))
+energy_types = [col for col in df.columns if col in ['Petrol', 'Uranium', 'Natural_Gas', 'Crude_Oil']]
+
+# --- Sidebar Controls ---
 st.sidebar.title("⚙️ Controls")
-selected_energy = st.sidebar.selectbox(
-    "Select Energy Type",
-    options=energy_types,
-    index=energy_types.index('Petrol') if 'Petrol' in energy_types else 0
-)
+selected_energy = st.sidebar.selectbox("Select Energy Type", options=energy_types)
 forecast_horizon = st.sidebar.selectbox(
     "Forecast Horizon",
-    options=[1, 3, 6, 12],
-    format_func=lambda x: f"{x} Month{'s' if x > 1 else ''}",
-    index=3
+    options=[3, 6, 12, 24],
+    format_func=lambda x: f"{x} Months",
+    index=1
 )
-refresh_button = st.sidebar.button("Refresh Data")
 
-# Handle refresh
-if refresh_button:
-    try:
-        st.info("Refreshing data and models...")
+if st.sidebar.button("Refresh Data & Retrain Models"):
+    with st.spinner("Refreshing data and retraining all models..."):
         subprocess.run(['python', 'main.py'], check=True)
         st.cache_data.clear()
         st.cache_resource.clear()
-        st.experimental_rerun()
-    except Exception as e:
-        st.error(f"Error refreshing data: {e}")
+    st.success("Data and models have been refreshed!")
+    st.experimental_rerun()
 
-# Main header
+# --- Dashboard Layout ---
 st.markdown('<h1 class="animate__fadeIn">⚡ Energy Price Forecasting Dashboard</h1>', unsafe_allow_html=True)
-
-# Tabs
 tab1, tab2, tab3 = st.tabs(["📊 Data Overview", "🔮 Forecasts", "🔍 Advanced Analyses"])
 
-# Tab 1: Data Overview
 with tab1:
     st.markdown('<h3 class="animate__fadeIn">Historical Prices</h3>', unsafe_allow_html=True)
     fig_price = px.line(df, x=df.index, y=selected_energy, title=f'{selected_energy} Historical Prices')
     fig_price.update_layout(
         plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6',
-        xaxis_title='Date', yaxis_title='Price ($)', template='plotly_dark',
-        hovermode='x unified',
-        line_color='#00e6e6'
+        template='plotly_dark', hovermode='x unified', line_color='#00e6e6'
     )
     st.plotly_chart(fig_price, use_container_width=True)
-    
-    st.markdown('<h3 class="animate__fadeIn">Data Table</h3>', unsafe_allow_html=True)
-    table_data = df.reset_index().rename(columns={'index': 'Date'})[['Date'] + energy_types]
-    st.dataframe(
-        table_data,
-        use_container_width=True,
-        height=300,
-        column_config={col: {"format": ".2f"} for col in energy_types}
-    )
-    
-    st.download_button(
-        label="Download Data",
-        data=df.to_csv(),
-        file_name=f"{selected_energy}_data.csv",
-        mime="text/csv"
-    )
+    st.dataframe(df.reset_index().rename(columns={'index':'Date'}), use_container_width=True)
 
-# Tab 2: Forecasts
 with tab2:
-    st.markdown('<h3 class="animate__fadeIn">Model Forecasts & Sentiment</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 class="animate__fadeIn">Model Forecasts</h3>', unsafe_allow_html=True)
     
-    processed_df_forecast = preprocess_for_lstm(df.copy())
-    if 'Sentiment' not in processed_df_forecast.columns:
-        processed_df_forecast['Sentiment'] = 0.0
-    
-    # NEW LOGIC: Calculate the start date for the forecast period to be the end of the historical data
+    # This is the core logic for generating future predictions.
+    # It starts forecasting from the last date in the historical data.
     last_date = df.index[-1]
-    forecast_start_date = last_date + pd.DateOffset(months=1)
+    forecast_dates = pd.date_range(start=last_date + pd.DateOffset(months=1), periods=forecast_horizon, freq='M')
     
-    # Create the test dates for the forecast horizon
-    test_dates = pd.date_range(start=forecast_start_date, periods=forecast_horizon, freq='M')
-    
+    # Prepare full dataframe for feature generation
+    full_processed_df = preprocess_for_prediction(df.copy())
+
+    # --- Generate Forecasts ---
     arima_preds, lstm_preds, prophet_preds = None, None, None
     
-    try:
-        if models['arima']:
-            # Correctly handle exogenous variables for forecasting
-            features = [col for col in processed_df_forecast.columns if col != selected_energy and ('rolling' in col or 'std' in col or 'Sentiment' in col)]
-            # Use the most recent exogenous data for prediction
-            exog_test = processed_df_forecast[features].iloc[-forecast_horizon:]
-            arima_preds = models['arima'].forecast(steps=forecast_horizon, exog=exog_test)
-    except Exception as e:
-        st.warning(f"ARIMA prediction failed: {e}")
-    
-    try:
-        if models['prophet']:
-            future = models['prophet'].make_future_dataframe(periods=forecast_horizon, freq='M')
-            future = pd.merge(future, processed_df_forecast.reset_index(), left_on='ds', right_on='index', how='left').drop('index', axis=1)
-            future = future.ffill().bfill()
-            prophet_preds = models['prophet'].predict(future.iloc[len(df):])['yhat']
-    except Exception as e:
-        st.warning(f"Prophet prediction failed: {e}")
-    
-    if models['lstm']:
+    # ARIMA Prediction
+    if models.get('arima'):
         try:
-            scaler = MinMaxScaler()
-            scaled_df = pd.DataFrame(scaler.fit_transform(processed_df_forecast), index=processed_df_forecast.index, columns=processed_df_forecast.columns)
-            scaled_target_idx = scaled_df.columns.get_loc(selected_energy)
+            exog_features = [col for col in full_processed_df.columns if col != selected_energy]
+            # We need to create future exogenous variables. A simple way is to use the last known values.
+            last_exog = full_processed_df[exog_features].iloc[-1:].values
+            future_exog = np.repeat(last_exog, forecast_horizon, axis=0)
+            arima_preds = models['arima'].forecast(steps=forecast_horizon, exog=future_exog)
+        except Exception as e: st.warning(f"ARIMA prediction failed: {e}")
+
+    # Prophet Prediction
+    if models.get('prophet'):
+        try:
+            future_df = pd.DataFrame({'ds': forecast_dates})
+            # Add future regressors by forward-filling the last known values.
+            for regressor in models['prophet'].extra_regressors:
+                future_df[regressor] = full_processed_df[regressor].iloc[-1]
+            prophet_preds = models['prophet'].predict(future_df)['yhat']
+        except Exception as e: st.warning(f"Prophet prediction failed: {e}")
+    
+    # LSTM Prediction
+    if models.get('lstm'):
+        try:
             seq_length = 12
-            last_sequence = scaled_df.values[-seq_length:]
+            scaler = MinMaxScaler(feature_range=(-1, 1))
+            scaled_df = pd.DataFrame(scaler.fit_transform(full_processed_df), columns=full_processed_df.columns)
             
-            full_scaler = MinMaxScaler()
-            full_scaler.fit(df[selected_energy].values.reshape(-1, 1))
-            
-            lstm_preds_list = []
-            current_input = torch.tensor(last_sequence, dtype=torch.float32).unsqueeze(0)
-            
+            # Autoregressive prediction loop
+            last_sequence = torch.tensor(scaled_df.values[-seq_length:], dtype=torch.float32).unsqueeze(0)
+            preds_scaled_list = []
             for _ in range(forecast_horizon):
                 with torch.no_grad():
-                    prediction = models['lstm'](current_input)
-                prediction_value = prediction.squeeze().item()
-                next_input_row = current_input.squeeze().numpy()[-1].copy()
-                next_input_row[scaled_target_idx] = prediction_value
-                
-                next_input_row_tensor = torch.tensor(next_input_row, dtype=torch.float32)
-                current_input = torch.cat((current_input.squeeze()[-seq_length+1:], next_input_row_tensor.unsqueeze(0))).unsqueeze(0)
-                lstm_preds_list.append(prediction_value)
-            
-            lstm_preds = full_scaler.inverse_transform(np.array(lstm_preds_list).reshape(-1, 1)).squeeze()
-        except Exception as e:
-            st.warning(f"LSTM prediction failed: {e}")
-            lstm_preds = None
+                    pred = models['lstm'](last_sequence)
+                    preds_scaled_list.append(pred.item())
+                    # Update sequence for next prediction
+                    new_row = last_sequence.squeeze(0)[-1].numpy()
+                    # Find target index to update with new prediction
+                    target_idx = scaled_df.columns.get_loc(selected_energy)
+                    new_row[target_idx] = pred.item()
+                    last_sequence = torch.cat((last_sequence.squeeze(0)[1:], torch.tensor(new_row).unsqueeze(0)), 0).unsqueeze(0)
 
-    if arima_preds is None:
-        np.random.seed(42)
-        arima_preds = df[selected_energy].iloc[-forecast_horizon:].values + np.random.normal(0, 1, forecast_horizon)
-    if prophet_preds is None:
-        np.random.seed(42)
-        prophet_preds = df[selected_energy].iloc[-forecast_horizon:].values + np.random.normal(0, 0.5, forecast_horizon)
-    if lstm_preds is None:
-        np.random.seed(42)
-        lstm_preds = df[selected_energy].iloc[-forecast_horizon:].values + np.random.normal(0, 1.5, forecast_horizon)
+            # Inverse transform the predictions
+            target_idx = full_processed_df.columns.get_loc(selected_energy)
+            dummy_preds = np.zeros((forecast_horizon, len(full_processed_df.columns)))
+            dummy_preds[:, target_idx] = preds_scaled_list
+            lstm_preds = scaler.inverse_transform(dummy_preds)[:, target_idx]
+
+        except Exception as e: st.warning(f"LSTM prediction failed: {e}")
     
+    # Plotting
     fig_forecast = go.Figure()
     fig_forecast.add_trace(go.Scatter(x=df.index, y=df[selected_energy], name='Actual', line={'color': '#00e6e6'}))
-    fig_forecast.add_trace(go.Scatter(x=test_dates, y=arima_preds, name='ARIMA', line={'color': '#ff007f'}))
-    fig_forecast.add_trace(go.Scatter(x=test_dates, y=lstm_preds, name='LSTM', line={'color': '#00ff66'}))
-    fig_forecast.add_trace(go.Scatter(x=test_dates, y=prophet_preds, name='Prophet', line={'color': '#ffcc00'}))
+    if arima_preds is not None: fig_forecast.add_trace(go.Scatter(x=forecast_dates, y=arima_preds, name='ARIMA', line={'color': '#ff007f'}))
+    if lstm_preds is not None: fig_forecast.add_trace(go.Scatter(x=forecast_dates, y=lstm_preds, name='LSTM', line={'color': '#00ff66'}))
+    if prophet_preds is not None: fig_forecast.add_trace(go.Scatter(x=forecast_dates, y=prophet_preds, name='Prophet', line={'color': '#ffcc00'}))
     fig_forecast.update_layout(
         title=f'{selected_energy} Forecasts ({forecast_horizon} Months)',
-        plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6',
-        xaxis_title='Date', yaxis_title='Price ($)', template='plotly_dark',
-        hovermode='x unified'
+        plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6', template='plotly_dark'
     )
     st.plotly_chart(fig_forecast, use_container_width=True)
     
-    st.markdown('<h3 class="animate__fadeIn">Model Performance</h3>', unsafe_allow_html=True)
-    results_data = pd.DataFrame([
-        {'Model': 'ARIMA', 'MSE': results['arima_mse'].iloc[0]},
-        {'Model': 'LSTM', 'MSE': results['lstm_mse'].iloc[0]},
-        {'Model': 'Prophet', 'MSE': results['prophet_mse'].iloc[0]}
-    ])
-    st.dataframe(
-        results_data,
-        use_container_width=True,
-        column_config={"MSE": {"format": ".4f"}}
-    )
-    
-    st.markdown('<h3 class="animate__fadeIn">Sentiment Analysis</h3>', unsafe_allow_html=True)
-    st.write("Sentiment analysis disabled in this demo. Enable X API for live sentiment.")
+    st.markdown('<h3 class="animate__fadeIn">Model Performance (MSE on Test Set)</h3>', unsafe_allow_html=True)
+    st.dataframe(results, use_container_width=True, column_config={"MSE": {"format": ".4f"}})
 
-# Tab 3: Advanced Analyses
 with tab3:
     st.markdown('<h3 class="animate__fadeIn">Correlation Heatmap</h3>', unsafe_allow_html=True)
     if os.path.exists('correlations_heatmap.png'):
         st.image('correlations_heatmap.png', use_container_width=True)
     else:
-        st.warning("Correlation heatmap not found.")
-    
-    st.markdown('<h3 class="animate__fadeIn">Monte Carlo Simulation</h3>', unsafe_allow_html=True)
-    last_price = df[selected_energy].iloc[-1]
-    vol = df[selected_energy].pct_change().std()
-    simulations = 100
-    paths = np.random.normal(0, vol, size=(forecast_horizon, simulations))
-    future_prices = last_price * np.exp(np.cumsum(paths, axis=0))
-    mean_path = future_prices.mean(axis=1)
-    lower_bound = np.percentile(future_prices, 5, axis=1)
-    upper_bound = np.percentile(future_prices, 95, axis=1)
-    
-    fig_monte_carlo = go.Figure()
-    for i in range(min(10, simulations)):
-        fig_monte_carlo.add_trace(go.Scatter(x=test_dates, y=future_prices[:, i], mode='lines', line={'color': '#00ff66', 'width': 1}, opacity=0.1, showlegend=False))
-    fig_monte_carlo.add_trace(go.Scatter(x=test_dates, y=mean_path, name='Mean Path', line={'color': '#00e6e6', 'width': 3}))
-    fig_monte_carlo.add_trace(go.Scatter(x=test_dates, y=lower_bound, name='5th Percentile', line={'color': '#ffcc00', 'dash': 'dash'}, fill=None))
-    fig_monte_carlo.add_trace(go.Scatter(x=test_dates, y=upper_bound, name='95th Percentile', line={'color': '#ffcc00', 'dash': 'dash'}, fill='tonexty', fillcolor='rgba(255, 204, 0, 0.1)'))
-    fig_monte_carlo.update_layout(
-        title=f'{selected_energy} Monte Carlo Simulation ({forecast_horizon} Months)',
-        plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6',
-        xaxis_title='Date', yaxis_title='Price ($)', template='plotly_dark',
-        hovermode='x unified'
-    )
-    st.plotly_chart(fig_monte_carlo, use_container_width=True)
+        st.warning("Correlation heatmap not found. Please run the main script.")
