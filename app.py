@@ -100,10 +100,12 @@ def preprocess_for_prediction(df):
     data for generating new predictions without re-running the full analysis.
     """
     df = df.replace([np.inf, -np.inf], np.nan).ffill().bfill()
-    for col in df.columns:
-        if '_rolling' not in col and '_std' not in col:
-             df[f'{col}_rolling'] = df[col].rolling(12).mean()
-             df[f'{col}_std'] = df[col].rolling(12).std()
+    base_cols = [col for col in df.columns if '_rolling' not in col and '_std' not in col]
+    for col in base_cols:
+        if col in ['Petrol', 'Uranium', 'Natural_Gas', 'Crude_Oil']:
+            df[f'{col}_rolling'] = df[col].rolling(12).mean()
+            df[f'{col}_std'] = df[col].rolling(12).std()
+            
     df = df.ffill().bfill()
     df.columns = df.columns.astype(str)
     # Add placeholder for sentiment
@@ -199,14 +201,12 @@ with tab1:
     st.markdown('<h3 class="animate__fadeIn">Historical Prices</h3>', unsafe_allow_html=True)
     fig_price = px.line(df, x=df.index, y=selected_energy, title=f'{selected_energy} Historical Prices')
     
-    # --- THIS IS THE FIX ---
-    fig_price.update_traces(line_color='#00e6e6') # Correctly set the line color on the trace
+    fig_price.update_traces(line_color='#00e6e6')
     fig_price.update_layout(
         plot_bgcolor='#2c2c2c', paper_bgcolor='#2c2c2c', font_color='#f0f2f6',
         template='plotly_dark', hovermode='x unified'
     )
-    # --- END FIX ---
-
+    
     st.plotly_chart(fig_price, use_container_width=True)
     st.dataframe(df.reset_index().rename(columns={'index':'Date'}), use_container_width=True)
 
@@ -223,11 +223,16 @@ with tab2:
     
     if models.get('arima'):
         try:
-            exog_features = [col for col in full_processed_df.columns if col != selected_energy]
+            # --- THIS IS THE FIX ---
+            # Explicitly select only the engineered features to match the training script
+            exog_features = [col for col in full_processed_df.columns if col != selected_energy and ('rolling' in col or 'std' in col or 'Sentiment' in col)]
+            # --- END FIX ---
+
             last_exog = full_processed_df[exog_features].iloc[-1:].values
             future_exog = np.repeat(last_exog, forecast_horizon, axis=0)
             arima_preds = models['arima'].forecast(steps=forecast_horizon, exog=future_exog)
-        except Exception as e: st.warning(f"ARIMA prediction failed: {e}")
+        except Exception as e: 
+            st.warning(f"ARIMA prediction failed: {e}")
 
     if models.get('prophet'):
         try:
